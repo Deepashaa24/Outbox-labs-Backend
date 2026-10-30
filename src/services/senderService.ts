@@ -157,7 +157,7 @@ async function provisionLocalAccount(
     select: { userId: true }
   });
   if (isNewSender && assigned?.userId === userId && process.env.NODE_ENV === "development") {
-    console.info(`Configured local Ethereal sender ${account.user} (password: ${account.pass}).`);
+    console.info(`Configured local Ethereal sender ${account.user}.`);
   }
 }
 
@@ -226,9 +226,7 @@ export async function ensureSenders(userId: string, minCount = 3): Promise<void>
             );
           } else {
             if (process.env.NODE_ENV === "development") {
-              console.info(
-                `Created Ethereal sender ${account.user} (password: ${account.pass}).`
-              );
+              console.info(`Created Ethereal sender ${account.user}.`);
             }
             assigned = true;
             break;

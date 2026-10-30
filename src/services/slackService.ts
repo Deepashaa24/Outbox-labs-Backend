@@ -36,20 +36,27 @@ export class SlackNotConnectedError extends Error {
 
 export class SlackWebhookError extends Error {
   readonly status = 502;
+  readonly slackErrorCode: string;
+  readonly upstreamStatus: number;
 
   constructor(statusCode: number, errorCode: string) {
-    if (errorCode === "messages_tab_disabled") {
-      super(
-        "Slack rejected a message to the selected destination because its Messages tab is disabled. Choose a regular Slack channel during reconnection and confirm the app has the chat:write bot scope."
-      );
-      this.name = "SlackWebhookError";
-      return;
-    }
     super(
-      errorCode
-        ? `Slack message API returned HTTP ${statusCode}: ${errorCode}`
-        : `Slack message API returned HTTP ${statusCode}.`
+      errorCode === "messages_tab_disabled"
+        ? "Slack rejected a message to the selected destination because its Messages tab is disabled. Choose a regular Slack channel during reconnection and confirm the app has the chat:write bot scope."
+        : errorCode === "channel_not_found" || errorCode === "not_in_channel" || errorCode === "is_archived"
+          ? "Slack could not find the saved channel. Reconnect Slack and select an existing channel where the app is installed."
+          : errorCode === "not_authed" || errorCode === "invalid_auth" || errorCode === "account_inactive"
+            ? "Slack rejected the stored access token. Disconnect and reconnect Slack to refresh the workspace permissions."
+            : errorCode === "webhook_failed" && statusCode >= 500
+              ? `Slack's incoming webhook returned HTTP ${statusCode}. Try again shortly; if it continues, reconnect Slack to refresh the selected channel.`
+              : errorCode === "webhook_failed"
+                ? "Slack rejected the saved incoming webhook. Reconnect Slack and select a channel where the app is installed."
+              : errorCode
+                ? `Slack message API returned HTTP ${statusCode}: ${errorCode}`
+                : `Slack message API returned HTTP ${statusCode}.`
     );
+    this.slackErrorCode = errorCode;
+    this.upstreamStatus = statusCode;
     this.name = "SlackWebhookError";
   }
 }
@@ -186,9 +193,11 @@ export async function connectSlackWorkspace(userId: string, code: string): Promi
 export async function getSlackConnectionStatus(userId: string): Promise<{ connected: boolean }> {
   const connection = await prisma.slackConnection.findUnique({
     where: { userId },
-    select: { id: true, accessToken: true, channelId: true }
+    select: { id: true, accessToken: true, channelId: true, webhookUrl: true }
   });
-  return { connected: Boolean(connection?.accessToken && connection.channelId) };
+  return {
+    connected: Boolean(connection?.accessToken && (connection.channelId || connection.webhookUrl))
+  };
 }
 
 async function postSlackMessage(
@@ -222,20 +231,75 @@ async function postSlackMessage(
   }
 }
 
+async function postSlackWebhook(webhookUrl: string, message: string): Promise<void> {
+  const url = new URL(webhookUrl);
+  if (url.protocol !== "https:" || url.hostname !== "hooks.slack.com") {
+    throw new Error("Stored Slack webhook URL is not a trusted Slack endpoint.");
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json; charset=utf-8" },
+    body: JSON.stringify({ text: message }),
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000)
+  });
+  const responseText = await response.text();
+  if (!response.ok || responseText.trim() !== "ok") {
+    console.error("Slack incoming-webhook request failed.", {
+      status: response.status
+    });
+    throw new SlackWebhookError(response.status, "webhook_failed");
+  }
+}
+
+async function clearBrokenSlackConnection(userId: string): Promise<void> {
+  await prisma.slackConnection.deleteMany({ where: { userId } });
+}
+
+async function postSlackToConnection(
+  connection: { accessToken: string | null; channelId: string | null; webhookUrl: string | null },
+  message: string,
+  userId?: string
+): Promise<void> {
+  if (connection.accessToken && connection.channelId) {
+    try {
+      await postSlackMessage(connection.accessToken, connection.channelId, message);
+      return;
+    } catch (error) {
+      if (!(error instanceof SlackWebhookError) || !["channel_not_found", "not_in_channel", "invalid_auth", "not_authed", "account_inactive"].includes(error.slackErrorCode)) {
+        throw error;
+      }
+      if (!connection.webhookUrl) throw error;
+      console.warn("Slack channel access failed; retrying with the saved incoming webhook.");
+    }
+  }
+
+  if (connection.webhookUrl) {
+    try {
+      await postSlackWebhook(connection.webhookUrl, message);
+      return;
+    } catch (error) {
+      if (userId) {
+        await clearBrokenSlackConnection(userId);
+      }
+      throw error;
+    }
+  }
+
+  throw new SlackNotConnectedError();
+}
+
 export async function sendSlackTestMessage(userId: string): Promise<void> {
   const connection = await prisma.slackConnection.findUnique({
     where: { userId },
-    select: { accessToken: true, channelId: true }
+    select: { accessToken: true, channelId: true, webhookUrl: true }
   });
-  if (!connection?.accessToken || !connection.channelId) {
+  if (!connection || (!connection.accessToken && !connection.webhookUrl)) {
     throw new SlackNotConnectedError();
   }
 
-  await postSlackMessage(
-    connection.accessToken,
-    connection.channelId,
-    "Slack integration test message."
-  );
+  await postSlackToConnection(connection, "Slack integration test message.", userId);
 }
 
 export async function disconnectSlackWorkspace(userId: string): Promise<void> {
@@ -283,9 +347,9 @@ export async function notifySlackRateLimit(userId: string, senderId: string): Pr
   try {
     const connection = await prisma.slackConnection.findUnique({
       where: { userId },
-      select: { accessToken: true, channelId: true }
+      select: { accessToken: true, channelId: true, webhookUrl: true }
     });
-    if (!connection?.accessToken || !connection.channelId) return;
+    if (!connection || (!connection.accessToken && !connection.webhookUrl)) return;
 
     const claimId = randomUUID();
     const claimed = await redis.set(
@@ -297,9 +361,8 @@ export async function notifySlackRateLimit(userId: string, senderId: string): Pr
     );
     if (claimed !== "OK") return;
 
-    await postSlackMessage(
-      connection.accessToken,
-      connection.channelId,
+    await postSlackToConnection(
+      connection,
       `Email scheduling is paused for sender \`${senderId}\` because its hourly rate limit was reached. Queued emails will resume in the next hour window.`
     );
     await redis.set(
@@ -317,11 +380,11 @@ export async function notifySlack(userId: string, message: string): Promise<void
   try {
     const connection = await prisma.slackConnection.findUnique({
       where: { userId },
-      select: { accessToken: true, channelId: true }
+      select: { accessToken: true, channelId: true, webhookUrl: true }
     });
-    if (!connection?.accessToken || !connection.channelId) return;
+    if (!connection || (!connection.accessToken && !connection.webhookUrl)) return;
 
-    await postSlackMessage(connection.accessToken, connection.channelId, message);
+    await postSlackToConnection(connection, message);
   } catch (error) {
     console.error("Slack notification failed.", error);
   }

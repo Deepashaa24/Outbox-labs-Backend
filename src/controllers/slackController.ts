@@ -107,9 +107,15 @@ export async function sendSlackTest(
     response.json({ data: { sent: true } });
   } catch (error) {
     if (error instanceof SlackWebhookError) {
-      const hint = error.message.includes("messages_tab_disabled")
-        ? "The selected destination is not available for app messages. Reconnect Slack and select a regular channel; confirm chat:write is enabled for the bot."
-        : "If this persists, reconnect Slack and select a channel where the app is installed.";
+      const hint = error.slackErrorCode === "messages_tab_disabled"
+        ? "Reconnect Slack and select a regular channel; confirm the bot has the chat:write scope."
+        : error.slackErrorCode === "channel_not_found"
+          ? "Slack could not find the saved channel or its webhook. Disconnect Slack, reconnect it, and select a channel that still exists."
+          : error.slackErrorCode === "webhook_failed" && error.upstreamStatus >= 500
+            ? "Slack returned a server error. Retry shortly; if it continues, disconnect and reconnect Slack to refresh the channel webhook."
+            : error.slackErrorCode === "webhook_failed"
+              ? "Disconnect Slack and reconnect it, selecting an existing channel where the app is installed."
+          : "If this persists, reconnect Slack and select a channel where the app is installed.";
       response.status(error.status).json({
         error: error.message,
         hint
