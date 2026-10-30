@@ -10,13 +10,20 @@ import { authenticateGoogleCode, getGoogleAuthorizationUrl } from "../services/g
 import { ensureSenders } from "../services/senderService.js";
 
 const OAUTH_STATE_COOKIE_NAME = "google_oauth_state";
-const isProduction = config.NODE_ENV === "production";
 
-function getCookieOptions(path: string, maxAge?: number) {
+function isHttpsRequest(request?: Request): boolean {
+  if (!request) return config.FRONTEND_URL.startsWith("https://");
+  const forwardedProto = request.headers["x-forwarded-proto"];
+  const protoHeader = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+  return Boolean(request.secure || protoHeader === "https" || config.FRONTEND_URL.startsWith("https://"));
+}
+
+function getCookieOptions(path: string, maxAge: number | undefined, request?: Request) {
+  const useCrossSiteCookies = isHttpsRequest(request);
   return {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" as const : "lax" as const,
+    secure: useCrossSiteCookies,
+    sameSite: useCrossSiteCookies ? "none" as const : "lax" as const,
     path,
     ...(maxAge === undefined ? {} : { maxAge: maxAge * 1000 })
   };
@@ -30,25 +37,25 @@ function getCookieValue(request: Request, name: string): string | undefined {
   return cookie?.slice(name.length + 1);
 }
 
-function clearOAuthStateCookie(response: Response): void {
+function clearOAuthStateCookie(response: Response, request?: Request): void {
   response.clearCookie(
     OAUTH_STATE_COOKIE_NAME,
-    getCookieOptions("/auth/google/callback")
+    getCookieOptions("/auth/google/callback", undefined, request)
   );
 }
 
-export function startGoogleOAuth(_request: Request, response: Response): void {
+export function startGoogleOAuth(request: Request, response: Response): void {
   try {
     const state = randomBytes(32).toString("base64url");
     const authorizationUrl = getGoogleAuthorizationUrl(state);
     response.cookie(
       OAUTH_STATE_COOKIE_NAME,
       state,
-      getCookieOptions("/auth/google/callback", config.OAUTH_STATE_TTL_SECONDS)
+      getCookieOptions("/auth/google/callback", config.OAUTH_STATE_TTL_SECONDS, request)
     );
     response.redirect(authorizationUrl);
   } catch (error) {
-    clearOAuthStateCookie(response);
+    clearOAuthStateCookie(response, request);
     response.status(503).json({
       error: error instanceof Error ? error.message : "Google OAuth is unavailable"
     });
@@ -63,7 +70,7 @@ export async function handleGoogleOAuthCallback(
   const queryState = typeof request.query.state === "string" ? request.query.state : undefined;
   const queryCode = typeof request.query.code === "string" ? request.query.code : undefined;
   const loginErrorUrl = `${config.FRONTEND_URL.replace(/\/$/, "")}/login?error=oauth`;
-  clearOAuthStateCookie(response);
+  clearOAuthStateCookie(response, request);
 
   if (
     !cookieState ||
@@ -96,7 +103,7 @@ export async function handleGoogleOAuthCallback(
     response.cookie(
       SESSION_COOKIE_NAME,
       token,
-      getCookieOptions("/", config.JWT_TTL_SECONDS)
+      getCookieOptions("/", config.JWT_TTL_SECONDS, request)
     );
     response.redirect(`${config.FRONTEND_URL.replace(/\/$/, "")}/dashboard`);
   } catch (error) {
@@ -134,7 +141,7 @@ export async function getCurrentUser(
   }
 }
 
-export function logout(_request: Request, response: Response): void {
-  response.clearCookie(SESSION_COOKIE_NAME, getCookieOptions("/"));
+export function logout(request: Request, response: Response): void {
+  response.clearCookie(SESSION_COOKIE_NAME, getCookieOptions("/", undefined, request));
   response.status(204).end();
 }
