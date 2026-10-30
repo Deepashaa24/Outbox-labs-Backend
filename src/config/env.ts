@@ -7,11 +7,21 @@ import { z } from "zod";
 const configDirectory = dirname(fileURLToPath(import.meta.url));
 const backendEnvFilePath = resolve(configDirectory, "../../.env");
 const rootEnvFilePath = resolve(configDirectory, "../../../.env");
-const envFilePath = existsSync(backendEnvFilePath)
-  ? backendEnvFilePath
-  : existsSync(rootEnvFilePath)
-    ? rootEnvFilePath
-    : undefined;
+const hasRuntimeEnv = Boolean(
+  process.env.DATABASE_URL ||
+  process.env.REDIS_URL ||
+  process.env.ELASTICSEARCH_URL ||
+  process.env.JWT_SECRET ||
+  process.env.GOOGLE_CLIENT_ID ||
+  process.env.GOOGLE_CLIENT_SECRET
+);
+const envFilePath = !hasRuntimeEnv && !process.env.NODE_ENV?.startsWith("prod")
+  ? (existsSync(backendEnvFilePath)
+      ? backendEnvFilePath
+      : existsSync(rootEnvFilePath)
+        ? rootEnvFilePath
+        : undefined)
+  : undefined;
 
 if (envFilePath) {
   const result = dotenv.config({ path: envFilePath });

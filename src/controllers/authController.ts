@@ -16,7 +16,7 @@ function getCookieOptions(path: string, maxAge?: number) {
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: "lax" as const,
+    sameSite: isProduction ? "none" as const : "lax" as const,
     path,
     ...(maxAge === undefined ? {} : { maxAge: maxAge * 1000 })
   };
