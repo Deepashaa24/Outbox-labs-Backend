@@ -1,0 +1,2 @@
+ALTER TABLE "EmailJob"
+ADD COLUMN "searchVersion" INTEGER NOT NULL DEFAULT 1;

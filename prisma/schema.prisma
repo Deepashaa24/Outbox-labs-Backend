@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EmailJobStatus {
+  SCHEDULED
+  PROCESSING
+  SENT
+  FAILED
+}
+
+model User {
+  id               String            @id @default(uuid())
+  email            String            @unique
+  googleId         String?           @unique
+  name             String?
+  avatarUrl        String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  senders          Sender[]
+  emailJobs        EmailJob[]
+  slackConnection  SlackConnection?
+}
+
+model Sender {
+  id        String     @id @default(uuid())
+  name      String
+  smtpHost  String
+  smtpPort  Int
+  smtpSecure Boolean  @default(false)
+  smtpUser  String     @unique
+  smtpPass  String
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailJobs EmailJob[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([userId])
+}
+
+model EmailJob {
+  id          String         @id @default(uuid())
+  toEmail     String
+  subject     String
+  body        String         @db.Text
+  scheduledAt DateTime
+  sentAt      DateTime?
+  status      EmailJobStatus @default(SCHEDULED)
+  attempts    Int            @default(0)
+  searchVersion Int          @default(1)
+  error       String?        @db.Text
+  batchId     String?
+  hourlyLimit Int?
+  senderId    String
+  userId      String
+  sender      Sender         @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([batchId, toEmail])
+  @@index([status, scheduledAt])
+  @@index([createdAt])
+  @@index([senderId])
+  @@index([userId])
+}
+
+model SlackConnection {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  accessToken String?  @db.Text
+  webhookUrl  String?  @db.Text
+  channelId   String?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

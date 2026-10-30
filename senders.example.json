@@ -1,0 +1,17 @@
+[
+  {
+    "name": "Ethereal Sender 1",
+    "user": "replace-with-ethereal-username-1",
+    "pass": "replace-with-ethereal-password-1"
+  },
+  {
+    "name": "Ethereal Sender 2",
+    "user": "replace-with-ethereal-username-2",
+    "pass": "replace-with-ethereal-password-2"
+  },
+  {
+    "name": "Ethereal Sender 3",
+    "user": "replace-with-ethereal-username-3",
+    "pass": "replace-with-ethereal-password-3"
+  }
+]

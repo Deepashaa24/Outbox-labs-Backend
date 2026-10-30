@@ -1,0 +1,51 @@
+{
+  "name": "@email-scheduler/backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" tsx watch src/server.ts",
+    "dev:worker": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" tsx src/workers/emailWorker.ts",
+    "dev:clean": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" npx kill-port 4000",
+    "build": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" prisma generate && cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" tsc -p tsconfig.json",
+    "start": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" node dist/server.js",
+    "start:worker": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" node dist/workers/emailWorker.js",
+    "typecheck": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" prisma generate && cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" tsc --noEmit -p tsconfig.json",
+    "db:generate": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" prisma generate",
+    "db:add-senders": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" tsx scripts/addSenders.ts",
+    "db:migrate": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" prisma migrate dev",
+    "db:deploy": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" prisma migrate deploy",
+    "db:seed": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" tsx prisma/seed.ts",
+    "load-test": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" tsx scripts/loadTest.ts",
+    "smoke-test": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" tsx scripts/smokeTest.ts",
+    "demo:ratelimit": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" tsx scripts/demoRateLimit.ts",
+    "verify:delivery": "cross-env NODE_OPTIONS=\"--dns-result-order=ipv4first --no-network-family-autoselection\" tsx scripts/verifyDeliveryGuarantees.ts"
+  },
+  "dependencies": {
+    "@bull-board/api": "^9.10.5",
+    "@bull-board/express": "^9.10.5",
+    "@elastic/elasticsearch": "^8.17.0",
+    "@prisma/client": "^6.10.1",
+    "bullmq": "^5.56.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "helmet": "^8.1.0",
+    "ioredis": "^5.6.1",
+    "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^6.10.1",
+    "zod": "^3.25.28"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.2",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.15.30",
+    "@types/nodemailer": "^6.4.17",
+    "cross-env": "^10.1.0",
+    "kill-port": "^2.0.1",
+    "prisma": "^6.10.1",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}
